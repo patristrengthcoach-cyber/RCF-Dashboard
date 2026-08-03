@@ -23,6 +23,7 @@ NOMBRES_MESES = [
     "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
     "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
 ]
+DIAS_SEMANA = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
 
 # Posiciones de columna FIJAS, tal cual tu formulario (0 = columna A)
 COL_TIMESTAMP = 0
@@ -51,6 +52,11 @@ st.markdown(
     [data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] * { color: #d1d5db !important; }
     small { color: #d1d5db !important; }
     [data-testid="stMarkdownContainer"] p { color: #e5e7eb; }
+    .st-key-filtros_box { background-color: #eafbea !important; border: 1px solid #bbf7d0 !important; border-radius: 12px; padding: 0.5rem; }
+    .st-key-filtros_box label, .st-key-filtros_box [data-testid="stMarkdownContainer"] p,
+    .st-key-filtros_box [data-testid="stCaptionContainer"], .st-key-filtros_box [data-testid="stCaptionContainer"] * {
+        color: #14532d !important; font-weight: 600;
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -119,6 +125,28 @@ def badge_escala(valor_num):
     color = color_escala_1_5(valor_num)
     texto = f"{valor_num:g}" if valor_num is not None else "—"
     return f"<span style='color:{color}; font-weight:800; font-size:1.4rem'>{texto}</span>"
+
+
+def color_rpe(v):
+    """RPE en escala 0-10 (Borg CR10): 0-3 suave, 4-5 moderado, 6-7 duro, 8-10 muy duro."""
+    if v is None:
+        return "#9ca3af"
+    if v <= 3:
+        return "#16a34a"
+    if v <= 5:
+        return "#facc15"
+    if v <= 7:
+        return "#fb923c"
+    return "#ef4444"
+
+
+def render_kpi(label, valor, color="#f1f5f9"):
+    st.markdown(
+        f"<div style='font-size:0.7rem; text-transform:uppercase; letter-spacing:0.05em; "
+        f"color:#9ca3af; font-weight:700;'>{label}</div>"
+        f"<div style='font-size:1.8rem; font-weight:800; color:{color}; line-height:1.2;'>{valor}</div>",
+        unsafe_allow_html=True,
+    )
 
 
 def ordenar_semanas_desc(semanas):
@@ -273,7 +301,10 @@ with col_logo:
     else:
         st.markdown("<div style='font-size:2.5rem'>⚽</div>", unsafe_allow_html=True)
 with col_titulo:
-    st.markdown("### RACING CLUB DE FERROL")
+    st.markdown(
+        "<div style='font-size:1.9rem; font-weight:900; color:#ffffff; letter-spacing:0.01em; line-height:1.15;'>RACING CLUB DE FERROL</div>",
+        unsafe_allow_html=True,
+    )
     st.caption(f"DIRECCIÓN DE RENDIMIENTO Y SALUD • {CATEGORIA.upper()}")
 
 with st.spinner("Estableciendo conexión con el Google Sheet..."):
@@ -289,13 +320,24 @@ if df.empty:
     st.stop()
 
 # ============================================================
-# CASILLAS DE MINUTOS (dato manual — tu Form no recoge duración)
+# VISTA (izquierda) + MINUTOS (derecha, más compactos)
 # ============================================================
-col_min1, col_min2 = st.columns(2)
-with col_min1:
-    minutos_entreno = st.number_input("Minutos por sesión de Entrenamiento", min_value=1, value=75, step=5)
-with col_min2:
-    minutos_partido = st.number_input("Minutos por sesión de Partido", min_value=1, value=90, step=5)
+col_vista, col_min = st.columns([2, 1])
+with col_vista:
+    vista_label = st.radio(
+        "Vista",
+        ["🧠 Wellness (Matutino)", "⚽ RPE Entrenamiento", "🔥 RPE Partido"],
+        horizontal=True,
+        label_visibility="collapsed",
+    )
+with col_min:
+    cmin1, cmin2 = st.columns(2)
+    with cmin1:
+        minutos_entreno = st.number_input("Min. Entreno", min_value=1, value=75, step=5)
+    with cmin2:
+        minutos_partido = st.number_input("Min. Partido", min_value=1, value=90, step=5)
+
+vista_key = "wellness" if vista_label.startswith("🧠") else ("rpe_entreno" if vista_label.startswith("⚽") else "rpe_partido")
 
 # calcular sRPE para las filas de carga (Entreno + Partido)
 df_sesiones = df[df["tipo"].isin(["ENTRENO", "PARTIDO"])].copy()
@@ -309,41 +351,31 @@ df_sesiones = df_sesiones.dropna(subset=["srpe"])
 timestamp_ref = df["timestamp"].max()
 
 # ============================================================
-# SELECTOR DE VISTA
-# ============================================================
-vista_label = st.radio(
-    "Vista",
-    ["🧠 Wellness (Matutino)", "⚽ RPE Entrenamiento", "🔥 RPE Partido"],
-    horizontal=True,
-    label_visibility="collapsed",
-)
-vista_key = "wellness" if vista_label.startswith("🧠") else ("rpe_entreno" if vista_label.startswith("⚽") else "rpe_partido")
-
-# ============================================================
 # FILTROS (Mes -> Semana -> Día en cascada — categoría única: Juvenil A)
 # ============================================================
 meses_disponibles = sorted(df["mes"].unique(), key=lambda m: NOMBRES_MESES.index(m))
 
-col_f1, col_f2, col_f3 = st.columns(3)
-with col_f1:
-    mes_sel = st.selectbox("Mes", ["TODOS"] + meses_disponibles)
+with st.container(border=True, key="filtros_box"):
+    col_f1, col_f2, col_f3 = st.columns(3)
+    with col_f1:
+        mes_sel = st.selectbox("Mes", ["TODOS"] + meses_disponibles)
 
-df_para_semanas = df if mes_sel == "TODOS" else df[df["mes"] == mes_sel]
-semanas_disponibles = ordenar_semanas_desc(df_para_semanas["semana"].unique().tolist())
-with col_f2:
-    semana_sel = st.selectbox("Semana", ["TODOS"] + semanas_disponibles)
+    df_para_semanas = df if mes_sel == "TODOS" else df[df["mes"] == mes_sel]
+    semanas_disponibles = ordenar_semanas_desc(df_para_semanas["semana"].unique().tolist())
+    with col_f2:
+        semana_sel = st.selectbox("Semana", ["TODOS"] + semanas_disponibles)
 
-df_para_dias = df_para_semanas if semana_sel == "TODOS" else df_para_semanas[df_para_semanas["semana"] == semana_sel]
-dias_disponibles = sorted(
-    df_para_dias["fecha"].unique(), key=lambda d: pd.to_datetime(d, dayfirst=True), reverse=True
-)
-with col_f3:
-    dia_sel = st.selectbox(
-        "Día",
-        ["TODOS"] + dias_disponibles,
-        help="Elige un día concreto para ver TODOS los registros de ese día por separado "
-             "(útil si hubo doble sesión y un jugador respondió 2 veces).",
+    df_para_dias = df_para_semanas if semana_sel == "TODOS" else df_para_semanas[df_para_semanas["semana"] == semana_sel]
+    dias_disponibles = sorted(
+        df_para_dias["fecha"].unique(), key=lambda d: pd.to_datetime(d, dayfirst=True), reverse=True
     )
+    with col_f3:
+        dia_sel = st.selectbox(
+            "Día",
+            ["TODOS"] + dias_disponibles,
+            help="Elige un día concreto para ver TODOS los registros de ese día por separado "
+                 "(útil si hubo doble sesión y un jugador respondió 2 veces).",
+        )
 
 if vista_key == "wellness":
     df_vista = df[df["tipo"] == "WELLNESS"].copy()
@@ -409,35 +441,32 @@ else:
 k1, k2, k3, k4, k5 = st.columns(5)
 with k1:
     with st.container(border=True):
-        st.metric(label_kpi1, valor_kpi1)
+        render_kpi(label_kpi1, valor_kpi1)
 with k2:
     with st.container(border=True):
-        st.metric("Disponibles", disponibles)
+        render_kpi("Disponibles", disponibles, "#22c55e")
 with k3:
     with st.container(border=True):
-        st.metric("No disponible / Bajas", bajas)
+        render_kpi("No disponible / Bajas", bajas, "#ef4444")
 with k4:
     with st.container(border=True):
         if vista_key == "wellness" and "wellness_score" in roster.columns:
             media_w_serie = roster["wellness_score"].dropna()
             if not media_w_serie.empty:
                 media_w = media_w_serie.mean()
-                st.metric("Media Wellness Grupal", f"{media_w:.1f}")
-                color_media = color_escala_1_5(media_w)
-                etiqueta_media = "Buen estado" if media_w <= 2 else ("Estado moderado" if media_w <= 3.2 else "Fatiga/estrés elevados")
-                st.markdown(f"<span style='color:{color_media}; font-size:0.75rem; font-weight:700'>● {etiqueta_media}</span>", unsafe_allow_html=True)
+                render_kpi("Media Wellness Grupal", f"{media_w:.1f}", color_escala_1_5(media_w))
             else:
-                st.metric("Media Wellness Grupal", "—")
+                render_kpi("Media Wellness Grupal", "—")
         else:
             rpe_medio_serie = df_vista["rpe"].dropna() if "rpe" in df_vista.columns else pd.Series(dtype=float)
             if not rpe_medio_serie.empty:
-                st.metric("RPE Medio (filtro actual)", f"{rpe_medio_serie.mean():.1f}")
+                media_rpe = rpe_medio_serie.mean()
+                render_kpi("RPE Medio", f"{media_rpe:.1f}", color_rpe(media_rpe))
             else:
-                st.metric("RPE Medio (filtro actual)", "—")
+                render_kpi("RPE Medio", "—")
 with k5:
     with st.container(border=True):
-        st.metric("Alertas Críticas ACWR", alertas_rojo)
-st.caption("Escala 1-5: 1 = poco fatigado / nada estresado / sin DOMS · 5 = muy fatigado / muy estresado / mucho DOMS.")
+        render_kpi("Alertas Críticas ACWR", alertas_rojo, "#ef4444")
 
 st.divider()
 
@@ -454,31 +483,51 @@ with col_izq:
         st.info("Sin registros para el filtro activo.")
     else:
         indices_disponibles = roster.index.tolist()
-        if "jugador_sel_idx" not in st.session_state or st.session_state["jugador_sel_idx"] not in indices_disponibles:
+        if "jugador_sel_idx" not in st.session_state:
+            st.session_state["jugador_sel_idx"] = indices_disponibles[0]
+        elif (
+            st.session_state["jugador_sel_idx"] is not None
+            and st.session_state["jugador_sel_idx"] not in indices_disponibles
+        ):
             st.session_state["jugador_sel_idx"] = indices_disponibles[0]
 
-        for idx_fila, row in roster.iterrows():
-            es_actual = idx_fila == st.session_state["jugador_sel_idx"]
-            with st.container(border=True):
-                cc1, cc2, cc3 = st.columns([1, 5, 2])
-                with cc1:
-                    st.markdown(f"<div style='font-size:1.6rem; text-align:center'>{emoji_riesgo[row['colorRiesgo']]}</div>", unsafe_allow_html=True)
-                with cc2:
-                    prefijo = "▶ " if es_actual else ""
-                    st.markdown(f"**{prefijo}[{row['idJugador']}] {row['nombre']}**")
-                    st.caption(row["hora"] if dia_sel != "TODOS" else row["fecha"])
-                with cc3:
-                    st.markdown(f"ACWR<br>**{row['acwr']}**", unsafe_allow_html=True)
-                if es_actual:
-                    st.markdown("<span style='color:#10b981; font-weight:700; font-size:0.8rem'>✓ Seleccionado</span>", unsafe_allow_html=True)
-                else:
-                    if st.button("Ver ficha →", key=f"btn_{idx_fila}", use_container_width=True):
-                        st.session_state["jugador_sel_idx"] = idx_fila
-                        st.rerun()
+        col_buscar, col_borrar = st.columns([3, 1])
+        with col_buscar:
+            busqueda = st.text_input(
+                "Buscar", placeholder="🔍 Buscar jugador por nombre...", label_visibility="collapsed"
+            )
+        with col_borrar:
+            if st.button("✕ Borrar", use_container_width=True):
+                st.session_state["jugador_sel_idx"] = None
+                st.rerun()
+
+        roster_visible = roster[roster["nombre"].str.contains(busqueda, case=False, na=False, regex=False)] if busqueda else roster
+
+        with st.container(height=520):
+            if roster_visible.empty:
+                st.caption("Ningún jugador coincide con la búsqueda.")
+            for idx_fila, row in roster_visible.iterrows():
+                es_actual = idx_fila == st.session_state["jugador_sel_idx"]
+                with st.container(border=True):
+                    cc1, cc2, cc3 = st.columns([1, 5, 2])
+                    with cc1:
+                        st.markdown(f"<div style='font-size:1.6rem; text-align:center'>{emoji_riesgo[row['colorRiesgo']]}</div>", unsafe_allow_html=True)
+                    with cc2:
+                        prefijo = "▶ " if es_actual else ""
+                        st.markdown(f"**{prefijo}[{row['idJugador']}] {row['nombre']}**")
+                        st.caption(row["hora"] if dia_sel != "TODOS" else row["fecha"])
+                    with cc3:
+                        st.markdown(f"ACWR<br>**{row['acwr']}**", unsafe_allow_html=True)
+                    if es_actual:
+                        st.markdown("<span style='color:#10b981; font-weight:700; font-size:0.8rem'>✓ Seleccionado</span>", unsafe_allow_html=True)
+                    else:
+                        if st.button("Ver ficha →", key=f"btn_{idx_fila}", use_container_width=True):
+                            st.session_state["jugador_sel_idx"] = idx_fila
+                            st.rerun()
 
         idx_sel = st.session_state["jugador_sel_idx"]
-        fila_jugador = roster.loc[idx_sel]
-        jugador_sel_id = fila_jugador["idJugador"]
+        fila_jugador = roster.loc[idx_sel] if idx_sel is not None else None
+        jugador_sel_id = fila_jugador["idJugador"] if fila_jugador is not None else None
 
 with col_der:
     st.markdown("##### Ficha Individual")
@@ -500,7 +549,7 @@ with col_der:
         c2.markdown(f"**Molestias**\n\n{fila_jugador['molestias_estado']}")
 
         if vista_key == "wellness":
-            st.markdown("**Detalle Wellness de hoy** &nbsp; <span style='font-size:0.7rem; color:#9ca3af'>(1 = mejor estado · 5 = peor estado)</span>", unsafe_allow_html=True)
+            st.markdown("**Detalle Wellness de hoy**")
             cw1, cw2, cw3, cw4, cw5 = st.columns(5)
             with cw1:
                 st.caption("Fatiga")
@@ -549,32 +598,35 @@ with col_der:
 st.divider()
 
 # ============================================================
-# CARGA SEMANAL ENTRENO vs PARTIDO
+# CARGA POR DÍA DE LA SEMANA — Entreno vs Partido
 # (sustituye al gráfico MD-4...GYM del ejemplo: tu Form no etiqueta el tipo de sesión del microciclo)
 # ============================================================
-st.markdown("##### Carga Semanal — Entrenamiento vs Partido")
+st.markdown("##### Carga por Día de la Semana — Entrenamiento vs Partido")
 with st.container(border=True):
     st.caption(
-        "Tu formulario no indica si una sesión es MD-3, MD, GYM, etc., así que agrupo por semana en su lugar. "
-        "Si más adelante añades esa pregunta al Form, activamos el desglose por microciclo."
+        "Tu formulario no indica si una sesión es MD-3, MD, GYM, etc., así que muestro el patrón por día "
+        "de la semana en su lugar. Si más adelante añades esa pregunta al Form, activamos el desglose por microciclo."
     )
 
     df_chart = df_sesiones.copy()
     if mes_sel != "TODOS":
         df_chart = df_chart[df_chart["mes"] == mes_sel]
-    if jugador_sel_id:
-        df_chart = df_chart[df_chart["idJugador"] == jugador_sel_id]
-        subtitulo = f"Individual — {fila_jugador['nombre']}"
-    else:
-        subtitulo = f"Colectivo — {CATEGORIA}"
-    st.caption(f"Análisis de carga para: {subtitulo}")
 
     if df_chart.empty:
         st.caption("Sin datos de carga para este filtro.")
     else:
-        resumen = df_chart.groupby(["semana", "tipo"])["srpe"].sum().unstack(fill_value=0)
-        semanas_orden = ordenar_semanas_desc(resumen.index.tolist())[::-1]
-        resumen = resumen.reindex(semanas_orden)
+        df_chart["dia_semana"] = df_chart["timestamp"].dt.dayofweek.map(lambda d: DIAS_SEMANA[d])
+
+        if jugador_sel_id:
+            df_chart_jugador = df_chart[df_chart["idJugador"] == jugador_sel_id]
+            resumen = df_chart_jugador.groupby(["dia_semana", "tipo"])["srpe"].sum().unstack(fill_value=0)
+            subtitulo = f"Individual — {fila_jugador['nombre']}"
+        else:
+            resumen = df_chart.groupby(["dia_semana", "tipo"])["srpe"].mean().unstack(fill_value=0)
+            subtitulo = f"Media del equipo — {CATEGORIA}"
+        st.caption(f"Análisis de carga para: {subtitulo}")
+
+        resumen = resumen.reindex(DIAS_SEMANA).fillna(0)
 
         fig_semana = go.Figure()
         if "ENTRENO" in resumen.columns:
