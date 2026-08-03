@@ -52,11 +52,32 @@ st.markdown(
     [data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] * { color: #d1d5db !important; }
     small { color: #d1d5db !important; }
     [data-testid="stMarkdownContainer"] p { color: #e5e7eb; }
-    .st-key-filtros_box { background-color: #eafbea !important; border: 1px solid #bbf7d0 !important; border-radius: 12px; padding: 0.5rem; }
+
+    /* Filtros: caja más pequeña y discreta */
+    .st-key-filtros_box { background-color: #eafbea !important; border: 1px solid #bbf7d0 !important; border-radius: 10px; padding: 0.35rem 0.6rem !important; }
     .st-key-filtros_box label, .st-key-filtros_box [data-testid="stMarkdownContainer"] p,
     .st-key-filtros_box [data-testid="stCaptionContainer"], .st-key-filtros_box [data-testid="stCaptionContainer"] * {
-        color: #14532d !important; font-weight: 600;
+        color: #14532d !important; font-weight: 600; font-size: 0.75rem !important;
     }
+    .st-key-filtros_box [data-baseweb="select"] { font-size: 0.75rem !important; min-height: 2.1rem !important; }
+
+    /* KPIs: caja muy resaltada */
+    .st-key-kpi_box {
+        background: linear-gradient(180deg, #0f172a 0%, #0a0f1c 100%) !important;
+        border: 2px solid #155e63 !important;
+        border-radius: 16px;
+        padding: 1.1rem 0.75rem !important;
+        box-shadow: 0 0 0 1px rgba(45,212,191,0.12), 0 10px 28px rgba(0,0,0,0.4);
+    }
+
+    /* Buscador y botones de la plantilla: más pequeños */
+    [class*="st-key-buscar_input"] input { font-size: 0.8rem !important; padding: 0.35rem 0.6rem !important; color: #f1f5f9 !important; }
+    [class*="st-key-borrar_sel"] button { font-size: 0.72rem !important; padding: 0.3rem 0.4rem !important; }
+    [class*="st-key-verficha_"] button {
+        font-size: 0.7rem !important; padding: 0.25rem 0.4rem !important;
+        background-color: #0891b2 !important; border-color: #0891b2 !important; color: #ffffff !important;
+    }
+    [class*="st-key-verficha_"] button:hover { background-color: #0e7490 !important; border-color: #0e7490 !important; color: #ffffff !important; }
     </style>
     """,
     unsafe_allow_html=True,
@@ -356,7 +377,7 @@ timestamp_ref = df["timestamp"].max()
 meses_disponibles = sorted(df["mes"].unique(), key=lambda m: NOMBRES_MESES.index(m))
 
 with st.container(border=True, key="filtros_box"):
-    col_f1, col_f2, col_f3 = st.columns(3)
+    col_f1, col_f2, col_f3, col_f_spacer = st.columns([1, 1, 1, 2])
     with col_f1:
         mes_sel = st.selectbox("Mes", ["TODOS"] + meses_disponibles)
 
@@ -438,18 +459,15 @@ else:
     pct = round(con_rpe / total * 100) if total > 0 else 0
     label_kpi1, valor_kpi1 = "Tasa de Respuesta RPE", f"{pct}%"
 
-k1, k2, k3, k4, k5 = st.columns(5)
-with k1:
-    with st.container(border=True):
+with st.container(border=True, key="kpi_box"):
+    k1, k2, k3, k4, k5 = st.columns(5)
+    with k1:
         render_kpi(label_kpi1, valor_kpi1)
-with k2:
-    with st.container(border=True):
+    with k2:
         render_kpi("Disponibles", disponibles, "#22c55e")
-with k3:
-    with st.container(border=True):
+    with k3:
         render_kpi("No disponible / Bajas", bajas, "#ef4444")
-with k4:
-    with st.container(border=True):
+    with k4:
         if vista_key == "wellness" and "wellness_score" in roster.columns:
             media_w_serie = roster["wellness_score"].dropna()
             if not media_w_serie.empty:
@@ -464,8 +482,7 @@ with k4:
                 render_kpi("RPE Medio", f"{media_rpe:.1f}", color_rpe(media_rpe))
             else:
                 render_kpi("RPE Medio", "—")
-with k5:
-    with st.container(border=True):
+    with k5:
         render_kpi("Alertas Críticas ACWR", alertas_rojo, "#ef4444")
 
 st.divider()
@@ -494,10 +511,10 @@ with col_izq:
         col_buscar, col_borrar = st.columns([3, 1])
         with col_buscar:
             busqueda = st.text_input(
-                "Buscar", placeholder="🔍 Buscar jugador por nombre...", label_visibility="collapsed"
+                "Buscar", placeholder="🔍 Buscar jugador por nombre...", label_visibility="collapsed", key="buscar_input"
             )
         with col_borrar:
-            if st.button("✕ Borrar", use_container_width=True):
+            if st.button("✕ Borrar", use_container_width=True, key="borrar_sel"):
                 st.session_state["jugador_sel_idx"] = None
                 st.rerun()
 
@@ -521,7 +538,7 @@ with col_izq:
                     if es_actual:
                         st.markdown("<span style='color:#10b981; font-weight:700; font-size:0.8rem'>✓ Seleccionado</span>", unsafe_allow_html=True)
                     else:
-                        if st.button("Ver ficha →", key=f"btn_{idx_fila}", use_container_width=True):
+                        if st.button("Ver ficha →", key=f"verficha_{idx_fila}", use_container_width=True):
                             st.session_state["jugador_sel_idx"] = idx_fila
                             st.rerun()
 
@@ -535,7 +552,10 @@ with col_der:
         st.info("Selecciona un futbolista del roster para ver su ficha.")
     else:
       with st.container(border=True):
-        st.markdown(f"### {fila_jugador['nombre']}")
+        st.markdown(
+            f"<div style='font-size:1.5rem; font-weight:900; color:#ffffff; line-height:1.2;'>{fila_jugador['nombre']}</div>",
+            unsafe_allow_html=True,
+        )
         st.caption(f"CÓDIGO DE REGISTRO: {jugador_sel_id} · Último registro: {fila_jugador['fecha']}")
 
         etiquetas_color = {"rojo": "Pico de Estrés (Peligro)", "amarillo": "Precaución", "verde": "Sweet Spot (Adaptación)"}
@@ -545,8 +565,15 @@ with col_der:
         )
 
         c1, c2 = st.columns(2)
-        c1.markdown(f"**Disponibilidad**\n\n{fila_jugador['disponibilidad']}")
-        c2.markdown(f"**Molestias**\n\n{fila_jugador['molestias_estado']}")
+        with c1:
+            st.markdown("**Disponibilidad**")
+            color_disp = "#22c55e" if fila_jugador["disponibilidad"] == "DISPONIBLE" else "#ef4444"
+            st.markdown(f"<span style='color:{color_disp}; font-weight:800; font-size:1.15rem'>{fila_jugador['disponibilidad']}</span>", unsafe_allow_html=True)
+        with c2:
+            st.markdown("**Molestias**")
+            mol_val = fila_jugador["molestias_estado"]
+            color_mol = "#fb923c" if mol_val and mol_val != "Sin molestias" else "#9ca3af"
+            st.markdown(f"<span style='color:{color_mol}; font-weight:800; font-size:1.15rem'>{mol_val}</span>", unsafe_allow_html=True)
 
         if vista_key == "wellness":
             st.markdown("**Detalle Wellness de hoy**")
@@ -572,26 +599,53 @@ with col_der:
         else:
             st.markdown("**Detalle del último registro**")
             cr1, cr2 = st.columns(2)
-            cr1.metric("RPE", fila_jugador.get("rpe", "—"))
-            cr2.metric("Rendimiento (1-10)", fila_jugador.get("rendimiento", "—"))
+            with cr1:
+                st.caption("RPE")
+                rpe_val = fila_jugador.get("rpe")
+                st.markdown(
+                    f"<span style='color:{color_rpe(rpe_val)}; font-weight:800; font-size:1.6rem'>{rpe_val if rpe_val is not None else '—'}</span>",
+                    unsafe_allow_html=True,
+                )
+            with cr2:
+                st.metric("Rendimiento (1-10)", fila_jugador.get("rendimiento", "—"))
 
-        st.markdown("**Evolución de la Carga (sRPE, últimos 10 registros)**")
-        historial = df_sesiones[df_sesiones["idJugador"] == jugador_sel_id].sort_values("timestamp").tail(10)
+        st.markdown("**Evolución de la Carga (sRPE, últimos 7 días)**")
+        leyenda_ua = "".join(
+            f"<span style='display:inline-flex; align-items:center; margin-right:10px; font-size:0.68rem; color:#cbd5e1;'>"
+            f"<span style='width:9px; height:9px; border-radius:50%; background:{c}; display:inline-block; margin-right:4px;'></span>{t}</span>"
+            for c, t in [
+                ("#16a34a", "0-200 Regenerativo"),
+                ("#4ade80", "200-400 Baja"),
+                ("#facc15", "400-600 Moderada"),
+                ("#fb923c", "600-800 Alta"),
+                ("#ef4444", "800-1000 Muy Alta"),
+                ("#991b1b", ">1000 Riesgo"),
+            ]
+        )
+        st.markdown(f"<div style='margin-bottom:6px; line-height:1.8;'>{leyenda_ua}</div>", unsafe_allow_html=True)
+
+        historial = df_sesiones[
+            (df_sesiones["idJugador"] == jugador_sel_id)
+            & (df_sesiones["timestamp"] >= timestamp_ref - pd.Timedelta(days=6))
+            & (df_sesiones["timestamp"] <= timestamp_ref)
+        ].sort_values("timestamp")
         if historial.empty:
-            st.caption("Sin sesiones de Entreno/Partido registradas todavía para este jugador.")
+            st.caption("Sin sesiones de Entreno/Partido en los últimos 7 días para este jugador.")
         else:
             colores_puntos = [color_carga(v) for v in historial["srpe"]]
             fig = go.Figure()
             fig.add_trace(go.Scatter(
                 x=historial["fecha"], y=historial["srpe"], mode="lines+markers",
-                line=dict(color="#374151", width=2),
-                marker=dict(color=colores_puntos, size=12, line=dict(color="white", width=1)),
-                fill="tozeroy", fillcolor="rgba(255,255,255,0.03)",
+                line=dict(color="#64748b", width=2),
+                marker=dict(color=colores_puntos, size=13, line=dict(color="#0f172a", width=1.5)),
+                fill="tozeroy", fillcolor="rgba(100,116,139,0.08)",
                 hovertemplate="Carga: %{y:.0f} UA<extra></extra>",
             ))
             fig.update_layout(
                 template="plotly_dark", height=260, margin=dict(l=10, r=10, t=10, b=10),
                 paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", showlegend=False,
+                xaxis=dict(gridcolor="rgba(255,255,255,0.05)", zeroline=False, linecolor="rgba(255,255,255,0.1)"),
+                yaxis=dict(gridcolor="rgba(255,255,255,0.05)", zeroline=False, linecolor="rgba(255,255,255,0.1)"),
             )
             st.plotly_chart(fig, use_container_width=True)
 
