@@ -86,6 +86,17 @@ st.markdown(
     /* Tarjetas de jugadores más compactas */
     .st-key-roster_scroll [data-testid="stVerticalBlockBorderWrapper"] { padding: 0.25rem 0.5rem !important; }
 
+    [class*="_inactivo"] button {
+        color: #111827 !important;
+        background-color: #e2e8f0 !important;
+        font-weight: 700 !important;
+        border: 1px solid #cbd5e1 !important;
+    }
+    [class*="_inactivo"] button:hover {
+        background-color: #cbd5e1 !important;
+        color: #0f172a !important;
+    }
+
     /* Paneles Monitoreo / Ficha Individual: cuadros bien diferenciados con sombra */
     .st-key-panel_monitoreo, .st-key-panel_ficha {
         background: linear-gradient(180deg, #0f172a 0%, #0a0f1c 100%) !important;
@@ -360,8 +371,12 @@ def procesar_registros(df_raw: pd.DataFrame):
         if r["tipo"] == "WELLNESS":
             if r.get("wellness_score") is not None:
                 estados[idj]["wellness"] = r["wellness_score"]
-            if r.get("disponible") in ("SI", "NO"):
-                estados[idj]["disponibilidad"] = "DISPONIBLE" if r["disponible"] == "SI" else "NO DISPONIBLE"
+            disp_val = r.get("disponible")
+            if disp_val:
+                if disp_val.startswith("NO"):
+                    estados[idj]["disponibilidad"] = "NO DISPONIBLE"
+                elif disp_val.startswith("SI") or disp_val.startswith("SÍ"):
+                    estados[idj]["disponibilidad"] = "DISPONIBLE"
         estados[idj]["molestias"] = r.get("molestias", estados[idj]["molestias"])
 
     return df, estados
@@ -448,18 +463,21 @@ col_vista, col_min = st.columns([2, 1])
 with col_vista:
     cv1, cv2, cv3 = st.columns(3)
     with cv1:
-        if st.button("🧠 Wellness", use_container_width=True,
-                      type="primary" if st.session_state["vista_key"] == "wellness" else "secondary"):
+        activo_w = st.session_state["vista_key"] == "wellness"
+        if st.button("🧠 Wellness", use_container_width=True, type="primary" if activo_w else "secondary",
+                      key=f"vista_wellness_{'activo' if activo_w else 'inactivo'}"):
             st.session_state["vista_key"] = "wellness"
             st.rerun()
     with cv2:
-        if st.button("⚽ RPE Entrenamiento", use_container_width=True,
-                      type="primary" if st.session_state["vista_key"] == "rpe_entreno" else "secondary"):
+        activo_e = st.session_state["vista_key"] == "rpe_entreno"
+        if st.button("⚽ RPE Entrenamiento", use_container_width=True, type="primary" if activo_e else "secondary",
+                      key=f"vista_entreno_{'activo' if activo_e else 'inactivo'}"):
             st.session_state["vista_key"] = "rpe_entreno"
             st.rerun()
     with cv3:
-        if st.button("🔥 RPE Partido", use_container_width=True,
-                      type="primary" if st.session_state["vista_key"] == "rpe_partido" else "secondary"):
+        activo_p = st.session_state["vista_key"] == "rpe_partido"
+        if st.button("🔥 RPE Partido", use_container_width=True, type="primary" if activo_p else "secondary",
+                      key=f"vista_partido_{'activo' if activo_p else 'inactivo'}"):
             st.session_state["vista_key"] = "rpe_partido"
             st.rerun()
 with col_min:
@@ -679,6 +697,12 @@ with col_izq:
                                 color_dia = color_rpe(val_dia)
                                 etiqueta_dia = "RPE"
                                 val_txt = f"{val_dia:g}" if val_dia is not None else "—"
+                                if vista_key == "rpe_entreno":
+                                    val_txt += f" · {minutos_entreno} min"
+                                elif vista_key == "rpe_partido":
+                                    mins_tarjeta = minutos_partido_guardados.get(f"{row['idJugador']}|{row['fecha']}")
+                                    if mins_tarjeta is not None:
+                                        val_txt += f" · {mins_tarjeta} min"
                             st.markdown(
                                 f"<div style='font-size:0.65rem; color:#9ca3af; line-height:1.4;'>{sub_fecha} · "
                                 f"<span style='color:{color_dia}; font-weight:700;'>{etiqueta_dia} {val_txt}</span></div>",
@@ -704,27 +728,33 @@ with col_izq:
     # ============================================================
     # MOLESTIAS — jugadores con dolor persistente (independiente de los filtros de arriba)
     # ============================================================
-    with st.expander("⚠️ Molestias — jugadores con dolor persistente"):
-        filas_molestia = []
-        for id_j in df["idJugador"].unique():
-            hist_jugador = df[df["idJugador"] == id_j].sort_values("timestamp")
-            racha, texto_mol = calcular_racha_molestias(hist_jugador)
-            if racha > 0:
-                nombre_j = hist_jugador.iloc[-1]["nombre"]
-                doms_serie = hist_jugador.loc[hist_jugador["tipo"] == "WELLNESS", "doms"].dropna()
-                doms_val = doms_serie.iloc[-1] if not doms_serie.empty else None
-                filas_molestia.append({"id": id_j, "nombre": nombre_j, "molestia": texto_mol, "racha": racha, "doms": doms_val})
+    filas_molestia = []
+    for id_j in df["idJugador"].unique():
+        hist_jugador = df[df["idJugador"] == id_j].sort_values("timestamp")
+        racha, texto_mol = calcular_racha_molestias(hist_jugador)
+        if racha > 0:
+            nombre_j = hist_jugador.iloc[-1]["nombre"]
+            doms_serie = hist_jugador.loc[hist_jugador["tipo"] == "WELLNESS", "doms"].dropna()
+            doms_val = doms_serie.iloc[-1] if not doms_serie.empty else None
+            filas_molestia.append({"id": id_j, "nombre": nombre_j, "molestia": texto_mol, "racha": racha, "doms": doms_val})
 
+    st.markdown(
+        f"<div style='font-size:1.15rem; font-weight:900; color:#fca5a5; "
+        f"border-left:5px solid #ef4444; padding-left:10px; margin:1rem 0 0.5rem 0;'>"
+        f"⚠️ MOLESTIAS ACTIVAS ({len(filas_molestia)})</div>",
+        unsafe_allow_html=True,
+    )
+    with st.expander("Ver jugadores con dolor persistente", expanded=False):
         if not filas_molestia:
-            st.caption("Ningún jugador reporta molestias activas ahora mismo. 🎉")
+            st.markdown("<div style='font-size:0.95rem; color:#4ade80; font-weight:700;'>Ningún jugador reporta molestias activas ahora mismo. 🎉</div>", unsafe_allow_html=True)
         else:
             filas_molestia.sort(key=lambda f: f["racha"], reverse=True)
             for f in filas_molestia:
                 with st.container(border=True):
                     mc1, mc2, mc3 = st.columns([3, 1.3, 1.3])
                     with mc1:
-                        st.markdown(f"<div style='font-weight:700; color:#f1f5f9; font-size:0.85rem;'>[{f['id']}] {f['nombre']}</div>", unsafe_allow_html=True)
-                        st.markdown(f"<div style='font-size:0.72rem; color:#fb923c;'>{f['molestia']}</div>", unsafe_allow_html=True)
+                        st.markdown(f"<div style='font-weight:800; color:#f1f5f9; font-size:1.1rem;'>[{f['id']}] {f['nombre']}</div>", unsafe_allow_html=True)
+                        st.markdown(f"<div style='font-size:0.9rem; color:#fb923c; font-weight:600; margin-top:2px;'>🩹 {f['molestia']}</div>", unsafe_allow_html=True)
                     with mc2:
                         color_racha = "#facc15" if f["racha"] <= 2 else "#ef4444"
                         render_kpi("Días seguidos", f["racha"], color_racha)
@@ -743,7 +773,14 @@ with col_der:
                 f"<div style='font-size:1.5rem; font-weight:900; color:#ffffff; line-height:1.2;'>{fila_jugador['nombre']}</div>",
                 unsafe_allow_html=True,
             )
-            st.caption(f"CÓDIGO DE REGISTRO: {jugador_sel_id} · Último registro: {fila_jugador['fecha']}")
+            extra_min = ""
+            if vista_key == "rpe_entreno":
+                extra_min = f" · {minutos_entreno} min"
+            elif vista_key == "rpe_partido":
+                mins_ficha = minutos_partido_guardados.get(f"{jugador_sel_id}|{fila_jugador['fecha']}")
+                if mins_ficha is not None:
+                    extra_min = f" · {mins_ficha} min jugados"
+            st.caption(f"CÓDIGO DE REGISTRO: {jugador_sel_id} · Último registro: {fila_jugador['fecha']}{extra_min}")
             st.markdown(
                 f"**ACWR: {fila_jugador['acwr']}** {emoji_riesgo[fila_jugador['colorRiesgo']]} "
                 f"— {etiquetas_color[fila_jugador['colorRiesgo']]}"
