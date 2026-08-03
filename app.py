@@ -54,11 +54,14 @@ st.markdown(
     small { color: #d1d5db !important; }
     [data-testid="stMarkdownContainer"] p { color: #e5e7eb; }
 
-    /* Filtros: caja más pequeña y discreta */
-    .st-key-filtros_box { background-color: #eafbea !important; border: 1px solid #bbf7d0 !important; border-radius: 10px; padding: 0.35rem 0.6rem !important; }
+    /* Filtros: misma estética oscura que el resto de cuadros */
+    .st-key-filtros_box {
+        background: linear-gradient(180deg, #0f172a 0%, #0a0f1c 100%) !important;
+        border: 1px solid #1e293b !important; border-radius: 10px; padding: 0.35rem 0.6rem !important;
+    }
     .st-key-filtros_box label, .st-key-filtros_box [data-testid="stMarkdownContainer"] p,
     .st-key-filtros_box [data-testid="stCaptionContainer"], .st-key-filtros_box [data-testid="stCaptionContainer"] * {
-        color: #14532d !important; font-weight: 600; font-size: 0.75rem !important;
+        color: #e5e7eb !important; font-weight: 600; font-size: 0.75rem !important;
     }
     .st-key-filtros_box [data-baseweb="select"] { font-size: 0.75rem !important; min-height: 2.1rem !important; }
 
@@ -182,22 +185,42 @@ def render_section_title(texto):
     )
 
 
-MINUTOS_FILE = "minutos_guardados.json"
+MINUTOS_ENTRENO_FILE = "minutos_entreno_guardado.json"
+MINUTOS_PARTIDO_FILE = "minutos_partido_por_jugador.json"
 
 
-def cargar_minutos_guardados():
+def cargar_minutos_entreno_guardado():
     try:
-        with open(MINUTOS_FILE, "r") as f:
-            data = json.load(f)
-            return int(data.get("entreno", 75)), int(data.get("partido", 90))
+        with open(MINUTOS_ENTRENO_FILE, "r") as f:
+            return int(json.load(f).get("entreno", 75))
     except Exception:
-        return 75, 90
+        return 75
 
 
-def guardar_minutos_en_disco(entreno, partido):
+def guardar_minutos_entreno_en_disco(entreno):
     try:
-        with open(MINUTOS_FILE, "w") as f:
-            json.dump({"entreno": entreno, "partido": partido}, f)
+        with open(MINUTOS_ENTRENO_FILE, "w") as f:
+            json.dump({"entreno": entreno}, f)
+        return True
+    except Exception:
+        return False
+
+
+def cargar_minutos_partido_guardados():
+    """Devuelve un diccionario {'idJugador|fecha': minutos}."""
+    try:
+        with open(MINUTOS_PARTIDO_FILE, "r") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def guardar_minutos_partido_en_disco(id_jugador, fecha, minutos):
+    datos = cargar_minutos_partido_guardados()
+    datos[f"{id_jugador}|{fecha}"] = minutos
+    try:
+        with open(MINUTOS_PARTIDO_FILE, "w") as f:
+            json.dump(datos, f)
         return True
     except Exception:
         return False
@@ -374,42 +397,62 @@ if df.empty:
     st.stop()
 
 # ============================================================
-# VISTA (izquierda) + MINUTOS (derecha, más compactos, con botón de guardar)
+# VISTA (botones resaltados) + MINUTOS DE ENTRENO (global, con guardado)
 # ============================================================
-minutos_guardados_entreno, minutos_guardados_partido = cargar_minutos_guardados()
+if "vista_key" not in st.session_state:
+    st.session_state["vista_key"] = "wellness"
+
+minutos_guardados_entreno = cargar_minutos_entreno_guardado()
 
 col_vista, col_min = st.columns([2, 1])
 with col_vista:
-    vista_label = st.radio(
-        "Vista",
-        ["🧠 Wellness (Matutino)", "⚽ RPE Entrenamiento", "🔥 RPE Partido"],
-        horizontal=True,
-        label_visibility="collapsed",
-    )
+    cv1, cv2, cv3 = st.columns(3)
+    with cv1:
+        if st.button("🧠 Wellness", use_container_width=True,
+                      type="primary" if st.session_state["vista_key"] == "wellness" else "secondary"):
+            st.session_state["vista_key"] = "wellness"
+            st.rerun()
+    with cv2:
+        if st.button("⚽ RPE Entrenamiento", use_container_width=True,
+                      type="primary" if st.session_state["vista_key"] == "rpe_entreno" else "secondary"):
+            st.session_state["vista_key"] = "rpe_entreno"
+            st.rerun()
+    with cv3:
+        if st.button("🔥 RPE Partido", use_container_width=True,
+                      type="primary" if st.session_state["vista_key"] == "rpe_partido" else "secondary"):
+            st.session_state["vista_key"] = "rpe_partido"
+            st.rerun()
 with col_min:
-    cmin1, cmin2, cmin3 = st.columns([1, 1, 0.5])
+    cmin1, cmin2 = st.columns([1, 0.4])
     with cmin1:
-        minutos_entreno = st.number_input("Min. Entreno", min_value=1, value=minutos_guardados_entreno, step=5)
+        minutos_entreno = st.number_input("Min. Entreno (equipo)", min_value=1, value=minutos_guardados_entreno, step=5)
     with cmin2:
-        minutos_partido = st.number_input("Min. Partido", min_value=1, value=minutos_guardados_partido, step=5)
-    with cmin3:
         st.markdown("<div style='height:1.85rem'></div>", unsafe_allow_html=True)
-        if st.button("💾", help="Guardar estos minutos para próximas visitas"):
-            if guardar_minutos_en_disco(minutos_entreno, minutos_partido):
-                st.toast("Minutos guardados ✅")
+        if st.button("💾", help="Guardar minutos de entreno para próximas visitas", key="guardar_min_entreno"):
+            if guardar_minutos_entreno_en_disco(minutos_entreno):
+                st.toast("Minutos de entreno guardados ✅")
             else:
                 st.toast("No se pudo guardar ❌")
 
-vista_key = "wellness" if vista_label.startswith("🧠") else ("rpe_entreno" if vista_label.startswith("⚽") else "rpe_partido")
+vista_key = st.session_state["vista_key"]
 
-# calcular sRPE para las filas de carga (Entreno + Partido)
-df_sesiones = df[df["tipo"].isin(["ENTRENO", "PARTIDO"])].copy()
-df_sesiones["srpe"] = df_sesiones.apply(
-    lambda r: (r["rpe"] * (minutos_entreno if r["tipo"] == "ENTRENO" else minutos_partido))
-    if r["rpe"] is not None else None,
-    axis=1,
-)
-df_sesiones = df_sesiones.dropna(subset=["srpe"])
+minutos_partido_guardados = cargar_minutos_partido_guardados()
+
+# calcular sRPE: entreno usa minutos globales, partido usa minutos guardados por jugador+partido
+df_sesiones_todas = df[df["tipo"].isin(["ENTRENO", "PARTIDO"])].copy()
+
+
+def _calcular_srpe(r):
+    if r["rpe"] is None:
+        return None
+    if r["tipo"] == "ENTRENO":
+        return r["rpe"] * minutos_entreno
+    mins = minutos_partido_guardados.get(f"{r['idJugador']}|{r['fecha']}")
+    return None if mins is None else r["rpe"] * mins
+
+
+df_sesiones_todas["srpe"] = df_sesiones_todas.apply(_calcular_srpe, axis=1)
+df_sesiones = df_sesiones_todas.dropna(subset=["srpe"])  # solo registros con carga calculable
 
 timestamp_ref = df["timestamp"].max()
 
@@ -445,7 +488,10 @@ if vista_key == "wellness":
 elif vista_key == "rpe_entreno":
     df_vista = df_sesiones[df_sesiones["tipo"] == "ENTRENO"].copy()
 else:
-    df_vista = df_sesiones[df_sesiones["tipo"] == "PARTIDO"].copy()
+    df_vista = df_sesiones_todas[df_sesiones_todas["tipo"] == "PARTIDO"].copy()
+    df_vista["tiene_minutos"] = df_vista.apply(
+        lambda r: f"{r['idJugador']}|{r['fecha']}" in minutos_partido_guardados, axis=1
+    )
 
 if mes_sel != "TODOS":
     df_vista = df_vista[df_vista["mes"] == mes_sel]
@@ -582,11 +628,16 @@ with col_izq:
                             val_dia = row.get("wellness_score")
                             color_dia = color_escala_1_5(val_dia)
                             etiqueta_dia = "Wellness"
+                            val_txt = f"{val_dia:g}" if val_dia is not None else "—"
+                        elif vista_key == "rpe_partido" and not row.get("tiene_minutos", False):
+                            color_dia = "#ef4444"
+                            etiqueta_dia = ""
+                            val_txt = "No convocado"
                         else:
                             val_dia = row.get("rpe")
                             color_dia = color_rpe(val_dia)
                             etiqueta_dia = "RPE"
-                        val_txt = f"{val_dia:g}" if val_dia is not None else "—"
+                            val_txt = f"{val_dia:g}" if val_dia is not None else "—"
                         st.markdown(
                             f"<div style='font-size:0.65rem; color:#9ca3af; line-height:1.4;'>{sub_fecha} · "
                             f"<span style='color:{color_dia}; font-weight:700;'>{etiqueta_dia} {val_txt}</span></div>",
@@ -660,6 +711,40 @@ with col_der:
                     render_kpi("Orina", orina_val if orina_val is not None else "—", color_orina)
                     if orina_val is not None and orina_val >= 9:
                         st.markdown("<div style='text-align:center; color:#ef4444; font-size:0.65rem; font-weight:700'>⚠️ Posible sangre</div>", unsafe_allow_html=True)
+
+        elif vista_key == "rpe_partido":
+            clave_partido = f"{jugador_sel_id}|{fila_jugador['fecha']}"
+            tiene_min = fila_jugador.get("tiene_minutos", False)
+            with st.container(border=True):
+                st.markdown(f"**⚽ Minutos jugados — Partido del {fila_jugador['fecha']}**")
+                if not tiene_min:
+                    st.markdown("<span style='color:#ef4444; font-weight:800;'>🔴 No convocado (sin minutos guardados)</span>", unsafe_allow_html=True)
+                cmp1, cmp2 = st.columns([2, 1])
+                with cmp1:
+                    valor_previo = int(minutos_partido_guardados.get(clave_partido, 0))
+                    minutos_este_partido = st.number_input(
+                        "Minutos jugados", min_value=0, max_value=130, value=valor_previo, step=5,
+                        label_visibility="collapsed", key=f"min_p_{clave_partido}",
+                    )
+                with cmp2:
+                    if st.button("💾 Guardar", key=f"guardar_p_{clave_partido}", use_container_width=True):
+                        if guardar_minutos_partido_en_disco(jugador_sel_id, fila_jugador["fecha"], minutos_este_partido):
+                            st.toast("Minutos del partido guardados ✅")
+                            st.rerun()
+                        else:
+                            st.toast("No se pudo guardar ❌")
+
+            st.markdown("**Detalle del último registro**")
+            cr1, cr2 = st.columns(2)
+            with cr1:
+                with st.container(border=True):
+                    rpe_val = fila_jugador.get("rpe")
+                    render_kpi("RPE", rpe_val if rpe_val is not None else "—", color_rpe(rpe_val))
+            with cr2:
+                with st.container(border=True):
+                    rend_val = fila_jugador.get("rendimiento")
+                    render_kpi("Rendimiento (1-10)", rend_val if rend_val is not None else "—", "#f1f5f9")
+
         else:
             st.markdown("**Detalle del último registro**")
             cr1, cr2 = st.columns(2)
