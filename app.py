@@ -1,3 +1,4 @@
+import json
 import math
 import os
 
@@ -78,6 +79,9 @@ st.markdown(
         background-color: #0891b2 !important; border-color: #0891b2 !important; color: #ffffff !important;
     }
     [class*="st-key-verficha_"] button:hover { background-color: #0e7490 !important; border-color: #0e7490 !important; color: #ffffff !important; }
+
+    /* Tarjetas de jugadores más compactas */
+    .st-key-roster_scroll [data-testid="stVerticalBlockBorderWrapper"] { padding: 0.25rem 0.5rem !important; }
     </style>
     """,
     unsafe_allow_html=True,
@@ -163,11 +167,40 @@ def color_rpe(v):
 
 def render_kpi(label, valor, color="#f1f5f9"):
     st.markdown(
-        f"<div style='font-size:0.7rem; text-transform:uppercase; letter-spacing:0.05em; "
+        f"<div style='text-align:center; font-size:0.7rem; text-transform:uppercase; letter-spacing:0.05em; "
         f"color:#9ca3af; font-weight:700;'>{label}</div>"
-        f"<div style='font-size:1.8rem; font-weight:800; color:{color}; line-height:1.2;'>{valor}</div>",
+        f"<div style='text-align:center; font-size:1.8rem; font-weight:800; color:{color}; line-height:1.2;'>{valor}</div>",
         unsafe_allow_html=True,
     )
+
+
+def render_section_title(texto):
+    st.markdown(
+        f"<div style='font-size:1.05rem; font-weight:800; color:#ffffff; "
+        f"border-left:4px solid #10b981; padding-left:10px; margin:0.2rem 0 0.7rem 0;'>{texto}</div>",
+        unsafe_allow_html=True,
+    )
+
+
+MINUTOS_FILE = "minutos_guardados.json"
+
+
+def cargar_minutos_guardados():
+    try:
+        with open(MINUTOS_FILE, "r") as f:
+            data = json.load(f)
+            return int(data.get("entreno", 75)), int(data.get("partido", 90))
+    except Exception:
+        return 75, 90
+
+
+def guardar_minutos_en_disco(entreno, partido):
+    try:
+        with open(MINUTOS_FILE, "w") as f:
+            json.dump({"entreno": entreno, "partido": partido}, f)
+        return True
+    except Exception:
+        return False
 
 
 def ordenar_semanas_desc(semanas):
@@ -341,8 +374,10 @@ if df.empty:
     st.stop()
 
 # ============================================================
-# VISTA (izquierda) + MINUTOS (derecha, más compactos)
+# VISTA (izquierda) + MINUTOS (derecha, más compactos, con botón de guardar)
 # ============================================================
+minutos_guardados_entreno, minutos_guardados_partido = cargar_minutos_guardados()
+
 col_vista, col_min = st.columns([2, 1])
 with col_vista:
     vista_label = st.radio(
@@ -352,11 +387,18 @@ with col_vista:
         label_visibility="collapsed",
     )
 with col_min:
-    cmin1, cmin2 = st.columns(2)
+    cmin1, cmin2, cmin3 = st.columns([1, 1, 0.5])
     with cmin1:
-        minutos_entreno = st.number_input("Min. Entreno", min_value=1, value=75, step=5)
+        minutos_entreno = st.number_input("Min. Entreno", min_value=1, value=minutos_guardados_entreno, step=5)
     with cmin2:
-        minutos_partido = st.number_input("Min. Partido", min_value=1, value=90, step=5)
+        minutos_partido = st.number_input("Min. Partido", min_value=1, value=minutos_guardados_partido, step=5)
+    with cmin3:
+        st.markdown("<div style='height:1.85rem'></div>", unsafe_allow_html=True)
+        if st.button("💾", help="Guardar estos minutos para próximas visitas"):
+            if guardar_minutos_en_disco(minutos_entreno, minutos_partido):
+                st.toast("Minutos guardados ✅")
+            else:
+                st.toast("No se pudo guardar ❌")
 
 vista_key = "wellness" if vista_label.startswith("🧠") else ("rpe_entreno" if vista_label.startswith("⚽") else "rpe_partido")
 
@@ -377,7 +419,7 @@ timestamp_ref = df["timestamp"].max()
 meses_disponibles = sorted(df["mes"].unique(), key=lambda m: NOMBRES_MESES.index(m))
 
 with st.container(border=True, key="filtros_box"):
-    col_f1, col_f2, col_f3, col_f_spacer = st.columns([1, 1, 1, 2])
+    col_f1, col_f2, col_f3 = st.columns(3)
     with col_f1:
         mes_sel = st.selectbox("Mes", ["TODOS"] + meses_disponibles)
 
@@ -495,7 +537,7 @@ emoji_riesgo = {"rojo": "🔴", "amarillo": "🟡", "verde": "🟢"}
 jugador_sel_id, fila_jugador = None, None
 
 with col_izq:
-    st.markdown("##### Monitoreo de Plantilla")
+    render_section_title("👥 Monitoreo de Plantilla")
     if roster.empty:
         st.info("Sin registros para el filtro activo.")
     else:
@@ -520,7 +562,7 @@ with col_izq:
 
         roster_visible = roster[roster["nombre"].str.contains(busqueda, case=False, na=False, regex=False)] if busqueda else roster
 
-        with st.container(height=520):
+        with st.container(height=520, key="roster_scroll"):
             if roster_visible.empty:
                 st.caption("Ningún jugador coincide con la búsqueda.")
             for idx_fila, row in roster_visible.iterrows():
@@ -528,15 +570,36 @@ with col_izq:
                 with st.container(border=True):
                     cc1, cc2, cc3 = st.columns([1, 5, 2])
                     with cc1:
-                        st.markdown(f"<div style='font-size:1.6rem; text-align:center'>{emoji_riesgo[row['colorRiesgo']]}</div>", unsafe_allow_html=True)
+                        st.markdown(f"<div style='font-size:1.15rem; text-align:center'>{emoji_riesgo[row['colorRiesgo']]}</div>", unsafe_allow_html=True)
                     with cc2:
                         prefijo = "▶ " if es_actual else ""
-                        st.markdown(f"**{prefijo}[{row['idJugador']}] {row['nombre']}**")
-                        st.caption(row["hora"] if dia_sel != "TODOS" else row["fecha"])
+                        st.markdown(
+                            f"<div style='font-size:0.82rem; font-weight:700; color:#f1f5f9; line-height:1.3;'>{prefijo}[{row['idJugador']}] {row['nombre']}</div>",
+                            unsafe_allow_html=True,
+                        )
+                        sub_fecha = row["hora"] if dia_sel != "TODOS" else row["fecha"]
+                        if vista_key == "wellness":
+                            val_dia = row.get("wellness_score")
+                            color_dia = color_escala_1_5(val_dia)
+                            etiqueta_dia = "Wellness"
+                        else:
+                            val_dia = row.get("rpe")
+                            color_dia = color_rpe(val_dia)
+                            etiqueta_dia = "RPE"
+                        val_txt = f"{val_dia:g}" if val_dia is not None else "—"
+                        st.markdown(
+                            f"<div style='font-size:0.65rem; color:#9ca3af; line-height:1.4;'>{sub_fecha} · "
+                            f"<span style='color:{color_dia}; font-weight:700;'>{etiqueta_dia} {val_txt}</span></div>",
+                            unsafe_allow_html=True,
+                        )
                     with cc3:
-                        st.markdown(f"ACWR<br>**{row['acwr']}**", unsafe_allow_html=True)
+                        st.markdown(
+                            f"<div style='font-size:0.6rem; color:#9ca3af; text-align:right;'>ACWR</div>"
+                            f"<div style='font-size:0.9rem; font-weight:800; text-align:right;'>{row['acwr']}</div>",
+                            unsafe_allow_html=True,
+                        )
                     if es_actual:
-                        st.markdown("<span style='color:#10b981; font-weight:700; font-size:0.8rem'>✓ Seleccionado</span>", unsafe_allow_html=True)
+                        st.markdown("<span style='color:#10b981; font-weight:700; font-size:0.7rem'>✓ Seleccionado</span>", unsafe_allow_html=True)
                     else:
                         if st.button("Ver ficha →", key=f"verficha_{idx_fila}", use_container_width=True):
                             st.session_state["jugador_sel_idx"] = idx_fila
@@ -547,7 +610,7 @@ with col_izq:
         jugador_sel_id = fila_jugador["idJugador"] if fila_jugador is not None else None
 
 with col_der:
-    st.markdown("##### Ficha Individual")
+    render_section_title("🩺 Ficha Individual")
     if fila_jugador is None:
         st.info("Selecciona un futbolista del roster para ver su ficha.")
     else:
@@ -566,102 +629,97 @@ with col_der:
 
         c1, c2 = st.columns(2)
         with c1:
-            st.markdown("**Disponibilidad**")
-            color_disp = "#22c55e" if fila_jugador["disponibilidad"] == "DISPONIBLE" else "#ef4444"
-            st.markdown(f"<span style='color:{color_disp}; font-weight:800; font-size:1.15rem'>{fila_jugador['disponibilidad']}</span>", unsafe_allow_html=True)
+            with st.container(border=True):
+                color_disp = "#22c55e" if fila_jugador["disponibilidad"] == "DISPONIBLE" else "#ef4444"
+                render_kpi("Disponibilidad", fila_jugador["disponibilidad"], color_disp)
         with c2:
-            st.markdown("**Molestias**")
-            mol_val = fila_jugador["molestias_estado"]
-            color_mol = "#fb923c" if mol_val and mol_val != "Sin molestias" else "#9ca3af"
-            st.markdown(f"<span style='color:{color_mol}; font-weight:800; font-size:1.15rem'>{mol_val}</span>", unsafe_allow_html=True)
+            with st.container(border=True):
+                mol_val = fila_jugador["molestias_estado"]
+                color_mol = "#fb923c" if mol_val and mol_val != "Sin molestias" else "#9ca3af"
+                render_kpi("Molestias", mol_val, color_mol)
 
         if vista_key == "wellness":
             st.markdown("**Detalle Wellness de hoy**")
             cw1, cw2, cw3, cw4, cw5 = st.columns(5)
             with cw1:
-                st.caption("Fatiga")
-                st.markdown(badge_escala(fila_jugador.get("fatiga")), unsafe_allow_html=True)
+                with st.container(border=True):
+                    render_kpi("Fatiga", fila_jugador.get("fatiga") if fila_jugador.get("fatiga") is not None else "—", color_escala_1_5(fila_jugador.get("fatiga")))
             with cw2:
-                st.caption("Sueño")
-                st.markdown(badge_escala(fila_jugador.get("sueno")), unsafe_allow_html=True)
+                with st.container(border=True):
+                    render_kpi("Sueño", fila_jugador.get("sueno") if fila_jugador.get("sueno") is not None else "—", color_escala_1_5(fila_jugador.get("sueno")))
             with cw3:
-                st.caption("Estrés")
-                st.markdown(badge_escala(fila_jugador.get("estres")), unsafe_allow_html=True)
+                with st.container(border=True):
+                    render_kpi("Estrés", fila_jugador.get("estres") if fila_jugador.get("estres") is not None else "—", color_escala_1_5(fila_jugador.get("estres")))
             with cw4:
-                st.caption("DOMS")
-                st.markdown(badge_escala(fila_jugador.get("doms")), unsafe_allow_html=True)
+                with st.container(border=True):
+                    render_kpi("DOMS", fila_jugador.get("doms") if fila_jugador.get("doms") is not None else "—", color_escala_1_5(fila_jugador.get("doms")))
             with cw5:
-                st.caption("Orina")
-                orina_val = fila_jugador.get("orina")
-                st.markdown(f"**{orina_val:g}**" if orina_val is not None else "—")
-                if orina_val is not None and orina_val >= 9:
-                    st.markdown("<span style='color:#ef4444; font-size:0.7rem; font-weight:700'>⚠️ Posible sangre</span>", unsafe_allow_html=True)
+                with st.container(border=True):
+                    orina_val = fila_jugador.get("orina")
+                    color_orina = "#ef4444" if orina_val is not None and orina_val >= 9 else "#f1f5f9"
+                    render_kpi("Orina", orina_val if orina_val is not None else "—", color_orina)
+                    if orina_val is not None and orina_val >= 9:
+                        st.markdown("<div style='text-align:center; color:#ef4444; font-size:0.65rem; font-weight:700'>⚠️ Posible sangre</div>", unsafe_allow_html=True)
         else:
             st.markdown("**Detalle del último registro**")
             cr1, cr2 = st.columns(2)
             with cr1:
-                st.caption("RPE")
-                rpe_val = fila_jugador.get("rpe")
-                st.markdown(
-                    f"<span style='color:{color_rpe(rpe_val)}; font-weight:800; font-size:1.6rem'>{rpe_val if rpe_val is not None else '—'}</span>",
-                    unsafe_allow_html=True,
-                )
+                with st.container(border=True):
+                    rpe_val = fila_jugador.get("rpe")
+                    render_kpi("RPE", rpe_val if rpe_val is not None else "—", color_rpe(rpe_val))
             with cr2:
-                st.metric("Rendimiento (1-10)", fila_jugador.get("rendimiento", "—"))
+                with st.container(border=True):
+                    rend_val = fila_jugador.get("rendimiento")
+                    render_kpi("Rendimiento (1-10)", rend_val if rend_val is not None else "—", "#f1f5f9")
 
-        st.markdown("**Evolución de la Carga (sRPE, últimos 7 días)**")
-        leyenda_ua = "".join(
-            f"<span style='display:inline-flex; align-items:center; margin-right:10px; font-size:0.68rem; color:#cbd5e1;'>"
-            f"<span style='width:9px; height:9px; border-radius:50%; background:{c}; display:inline-block; margin-right:4px;'></span>{t}</span>"
-            for c, t in [
-                ("#16a34a", "0-200 Regenerativo"),
-                ("#4ade80", "200-400 Baja"),
-                ("#facc15", "400-600 Moderada"),
-                ("#fb923c", "600-800 Alta"),
-                ("#ef4444", "800-1000 Muy Alta"),
-                ("#991b1b", ">1000 Riesgo"),
-            ]
-        )
-        st.markdown(f"<div style='margin-bottom:6px; line-height:1.8;'>{leyenda_ua}</div>", unsafe_allow_html=True)
-
-        historial = df_sesiones[
-            (df_sesiones["idJugador"] == jugador_sel_id)
-            & (df_sesiones["timestamp"] >= timestamp_ref - pd.Timedelta(days=6))
-            & (df_sesiones["timestamp"] <= timestamp_ref)
-        ].sort_values("timestamp")
-        if historial.empty:
-            st.caption("Sin sesiones de Entreno/Partido en los últimos 7 días para este jugador.")
-        else:
-            colores_puntos = [color_carga(v) for v in historial["srpe"]]
-            fig = go.Figure()
-            fig.add_trace(go.Scatter(
-                x=historial["fecha"], y=historial["srpe"], mode="lines+markers",
-                line=dict(color="#64748b", width=2),
-                marker=dict(color=colores_puntos, size=13, line=dict(color="#0f172a", width=1.5)),
-                fill="tozeroy", fillcolor="rgba(100,116,139,0.08)",
-                hovertemplate="Carga: %{y:.0f} UA<extra></extra>",
-            ))
-            fig.update_layout(
-                template="plotly_dark", height=260, margin=dict(l=10, r=10, t=10, b=10),
-                paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", showlegend=False,
-                xaxis=dict(gridcolor="rgba(255,255,255,0.05)", zeroline=False, linecolor="rgba(255,255,255,0.1)"),
-                yaxis=dict(gridcolor="rgba(255,255,255,0.05)", zeroline=False, linecolor="rgba(255,255,255,0.1)"),
+        with st.container(border=True):
+            st.markdown("**Evolución de la Carga (sRPE, últimos 7 días)**")
+            leyenda_ua = "".join(
+                f"<span style='display:inline-flex; align-items:center; margin-right:10px; font-size:0.68rem; color:#cbd5e1;'>"
+                f"<span style='width:9px; height:9px; border-radius:50%; background:{c}; display:inline-block; margin-right:4px;'></span>{t}</span>"
+                for c, t in [
+                    ("#16a34a", "0-200 Regenerativo"),
+                    ("#4ade80", "200-400 Baja"),
+                    ("#facc15", "400-600 Moderada"),
+                    ("#fb923c", "600-800 Alta"),
+                    ("#ef4444", "800-1000 Muy Alta"),
+                    ("#991b1b", ">1000 Riesgo"),
+                ]
             )
-            st.plotly_chart(fig, use_container_width=True)
+            st.markdown(f"<div style='margin-bottom:6px; line-height:1.8;'>{leyenda_ua}</div>", unsafe_allow_html=True)
+
+            historial = df_sesiones[
+                (df_sesiones["idJugador"] == jugador_sel_id)
+                & (df_sesiones["timestamp"] >= timestamp_ref - pd.Timedelta(days=6))
+                & (df_sesiones["timestamp"] <= timestamp_ref)
+            ].sort_values("timestamp")
+            if historial.empty:
+                st.caption("Sin sesiones de Entreno/Partido en los últimos 7 días para este jugador.")
+            else:
+                colores_puntos = [color_carga(v) for v in historial["srpe"]]
+                fig = go.Figure()
+                fig.add_trace(go.Scatter(
+                    x=historial["fecha"], y=historial["srpe"], mode="lines+markers",
+                    line=dict(color="#64748b", width=2),
+                    marker=dict(color=colores_puntos, size=13, line=dict(color="#0f172a", width=1.5)),
+                    fill="tozeroy", fillcolor="rgba(100,116,139,0.08)",
+                    hovertemplate="Carga: %{y:.0f} UA<extra></extra>",
+                ))
+                fig.update_layout(
+                    template="plotly_dark", height=260, margin=dict(l=10, r=10, t=10, b=10),
+                    paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", showlegend=False,
+                    xaxis=dict(gridcolor="rgba(255,255,255,0.05)", zeroline=False, linecolor="rgba(255,255,255,0.1)"),
+                    yaxis=dict(gridcolor="rgba(255,255,255,0.03)", zeroline=False, linecolor="rgba(255,255,255,0.1)", nticks=4),
+                )
+                st.plotly_chart(fig, use_container_width=True)
 
 st.divider()
 
 # ============================================================
 # CARGA POR DÍA DE LA SEMANA — Entreno vs Partido
-# (sustituye al gráfico MD-4...GYM del ejemplo: tu Form no etiqueta el tipo de sesión del microciclo)
 # ============================================================
-st.markdown("##### Carga por Día de la Semana — Entrenamiento vs Partido")
+render_section_title("📊 Carga por Día de la Semana — Entrenamiento vs Partido")
 with st.container(border=True):
-    st.caption(
-        "Tu formulario no indica si una sesión es MD-3, MD, GYM, etc., así que muestro el patrón por día "
-        "de la semana en su lugar. Si más adelante añades esa pregunta al Form, activamos el desglose por microciclo."
-    )
-
     df_chart = df_sesiones.copy()
     if mes_sel != "TODOS":
         df_chart = df_chart[df_chart["mes"] == mes_sel]
@@ -684,13 +742,21 @@ with st.container(border=True):
 
         fig_semana = go.Figure()
         if "ENTRENO" in resumen.columns:
-            fig_semana.add_trace(go.Bar(name="Entrenamiento", x=resumen.index, y=resumen["ENTRENO"], marker_color="#10b981"))
+            fig_semana.add_trace(go.Bar(
+                name="Entrenamiento", x=resumen.index, y=resumen["ENTRENO"], marker_color="#10b981",
+                hovertemplate="%{x}<br>Entrenamiento: %{y:.0f} UA<extra></extra>",
+            ))
         if "PARTIDO" in resumen.columns:
-            fig_semana.add_trace(go.Bar(name="Partido", x=resumen.index, y=resumen["PARTIDO"], marker_color="#ef4444"))
+            fig_semana.add_trace(go.Bar(
+                name="Partido", x=resumen.index, y=resumen["PARTIDO"], marker_color="#ef4444",
+                hovertemplate="%{x}<br>Partido: %{y:.0f} UA<extra></extra>",
+            ))
         fig_semana.update_layout(
-            template="plotly_dark", height=280, barmode="group",
+            template="plotly_dark", height=280, barmode="group", bargap=0.3, bargroupgap=0.15,
             margin=dict(l=10, r=10, t=10, b=10),
             paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
             legend=dict(orientation="h", yanchor="bottom", y=1.02),
+            xaxis=dict(showgrid=False, linecolor="rgba(255,255,255,0.15)"),
+            yaxis=dict(gridcolor="rgba(255,255,255,0.04)", zeroline=False, nticks=4, showticklabels=True),
         )
         st.plotly_chart(fig_semana, use_container_width=True)
