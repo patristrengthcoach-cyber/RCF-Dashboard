@@ -1,4 +1,5 @@
 import math
+import os
 
 import pandas as pd
 import plotly.graph_objects as go
@@ -47,6 +48,9 @@ st.markdown(
     .stApp { background-color: #030712; }
     [data-testid="stMetricValue"] { font-weight: 800; }
     [data-testid="stMetricLabel"] { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; }
+    [data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] * { color: #d1d5db !important; }
+    small { color: #d1d5db !important; }
+    [data-testid="stMarkdownContainer"] p { color: #e5e7eb; }
     </style>
     """,
     unsafe_allow_html=True,
@@ -262,8 +266,15 @@ def calcular_acwr(historial_srpe: pd.DataFrame, timestamp_ref: pd.Timestamp):
 # ============================================================
 # CABECERA
 # ============================================================
-st.markdown("### ⚽ RACING CLUB DE FERROL")
-st.caption(f"DIRECCIÓN DE RENDIMIENTO Y SALUD • {CATEGORIA.upper()}")
+col_logo, col_titulo = st.columns([1, 8])
+with col_logo:
+    if os.path.exists("logo.png"):
+        st.image("logo.png", width=70)
+    else:
+        st.markdown("<div style='font-size:2.5rem'>⚽</div>", unsafe_allow_html=True)
+with col_titulo:
+    st.markdown("### RACING CLUB DE FERROL")
+    st.caption(f"DIRECCIÓN DE RENDIMIENTO Y SALUD • {CATEGORIA.upper()}")
 
 with st.spinner("Estableciendo conexión con el Google Sheet..."):
     try:
@@ -280,10 +291,6 @@ if df.empty:
 # ============================================================
 # CASILLAS DE MINUTOS (dato manual — tu Form no recoge duración)
 # ============================================================
-st.info(
-    "⏱️ Tu formulario no registra minutos de sesión. Indica aquí la duración habitual para calcular "
-    "la carga (sRPE = minutos × RPE). Se aplica a **todos** los registros de ese tipo, no por sesión individual."
-)
 col_min1, col_min2 = st.columns(2)
 with col_min1:
     minutos_entreno = st.number_input("Minutos por sesión de Entrenamiento", min_value=1, value=75, step=5)
@@ -400,23 +407,36 @@ else:
     label_kpi1, valor_kpi1 = "Tasa de Respuesta RPE", f"{pct}%"
 
 k1, k2, k3, k4, k5 = st.columns(5)
-k1.metric(label_kpi1, valor_kpi1)
-k2.metric("Disponibles", disponibles)
-k3.metric("No disponible / Bajas", bajas)
+with k1:
+    with st.container(border=True):
+        st.metric(label_kpi1, valor_kpi1)
+with k2:
+    with st.container(border=True):
+        st.metric("Disponibles", disponibles)
+with k3:
+    with st.container(border=True):
+        st.metric("No disponible / Bajas", bajas)
 with k4:
-    if vista_key == "wellness" and "wellness_score" in roster.columns:
-        media_w_serie = roster["wellness_score"].dropna()
-        if not media_w_serie.empty:
-            media_w = media_w_serie.mean()
-            st.metric("Media Wellness Grupal", f"{media_w:.1f}")
-            color_media = color_escala_1_5(media_w)
-            etiqueta_media = "Buen estado" if media_w <= 2 else ("Estado moderado" if media_w <= 3.2 else "Fatiga/estrés elevados")
-            st.markdown(f"<span style='color:{color_media}; font-size:0.75rem; font-weight:700'>● {etiqueta_media}</span>", unsafe_allow_html=True)
+    with st.container(border=True):
+        if vista_key == "wellness" and "wellness_score" in roster.columns:
+            media_w_serie = roster["wellness_score"].dropna()
+            if not media_w_serie.empty:
+                media_w = media_w_serie.mean()
+                st.metric("Media Wellness Grupal", f"{media_w:.1f}")
+                color_media = color_escala_1_5(media_w)
+                etiqueta_media = "Buen estado" if media_w <= 2 else ("Estado moderado" if media_w <= 3.2 else "Fatiga/estrés elevados")
+                st.markdown(f"<span style='color:{color_media}; font-size:0.75rem; font-weight:700'>● {etiqueta_media}</span>", unsafe_allow_html=True)
+            else:
+                st.metric("Media Wellness Grupal", "—")
         else:
-            st.metric("Media Wellness Grupal", "—")
-    else:
-        st.metric("Media Wellness Grupal", "—")
-k5.metric("Alertas Críticas ACWR", alertas_rojo)
+            rpe_medio_serie = df_vista["rpe"].dropna() if "rpe" in df_vista.columns else pd.Series(dtype=float)
+            if not rpe_medio_serie.empty:
+                st.metric("RPE Medio (filtro actual)", f"{rpe_medio_serie.mean():.1f}")
+            else:
+                st.metric("RPE Medio (filtro actual)", "—")
+with k5:
+    with st.container(border=True):
+        st.metric("Alertas Críticas ACWR", alertas_rojo)
 st.caption("Escala 1-5: 1 = poco fatigado / nada estresado / sin DOMS · 5 = muy fatigado / muy estresado / mucho DOMS.")
 
 st.divider()
@@ -433,15 +453,30 @@ with col_izq:
     if roster.empty:
         st.info("Sin registros para el filtro activo.")
     else:
-        opciones = {}
+        indices_disponibles = roster.index.tolist()
+        if "jugador_sel_idx" not in st.session_state or st.session_state["jugador_sel_idx"] not in indices_disponibles:
+            st.session_state["jugador_sel_idx"] = indices_disponibles[0]
+
         for idx_fila, row in roster.iterrows():
-            etiqueta = f"{emoji_riesgo[row['colorRiesgo']]} [{row['idJugador']}] {row['nombre']}"
-            if dia_sel != "TODOS":
-                etiqueta += f" — {row['hora']}"
-            etiqueta += f" — ACWR {row['acwr']}"
-            opciones[etiqueta] = idx_fila
-        etiqueta_sel = st.radio("Jugadores", list(opciones.keys()), label_visibility="collapsed")
-        idx_sel = opciones[etiqueta_sel]
+            es_actual = idx_fila == st.session_state["jugador_sel_idx"]
+            with st.container(border=True):
+                cc1, cc2, cc3 = st.columns([1, 5, 2])
+                with cc1:
+                    st.markdown(f"<div style='font-size:1.6rem; text-align:center'>{emoji_riesgo[row['colorRiesgo']]}</div>", unsafe_allow_html=True)
+                with cc2:
+                    prefijo = "▶ " if es_actual else ""
+                    st.markdown(f"**{prefijo}[{row['idJugador']}] {row['nombre']}**")
+                    st.caption(row["hora"] if dia_sel != "TODOS" else row["fecha"])
+                with cc3:
+                    st.markdown(f"ACWR<br>**{row['acwr']}**", unsafe_allow_html=True)
+                if es_actual:
+                    st.markdown("<span style='color:#10b981; font-weight:700; font-size:0.8rem'>✓ Seleccionado</span>", unsafe_allow_html=True)
+                else:
+                    if st.button("Ver ficha →", key=f"btn_{idx_fila}", use_container_width=True):
+                        st.session_state["jugador_sel_idx"] = idx_fila
+                        st.rerun()
+
+        idx_sel = st.session_state["jugador_sel_idx"]
         fila_jugador = roster.loc[idx_sel]
         jugador_sel_id = fila_jugador["idJugador"]
 
@@ -450,6 +485,7 @@ with col_der:
     if fila_jugador is None:
         st.info("Selecciona un futbolista del roster para ver su ficha.")
     else:
+      with st.container(border=True):
         st.markdown(f"### {fila_jugador['nombre']}")
         st.caption(f"CÓDIGO DE REGISTRO: {jugador_sel_id} · Último registro: {fila_jugador['fecha']}")
 
@@ -517,37 +553,38 @@ st.divider()
 # (sustituye al gráfico MD-4...GYM del ejemplo: tu Form no etiqueta el tipo de sesión del microciclo)
 # ============================================================
 st.markdown("##### Carga Semanal — Entrenamiento vs Partido")
-st.caption(
-    "Tu formulario no indica si una sesión es MD-3, MD, GYM, etc., así que agrupo por semana en su lugar. "
-    "Si más adelante añades esa pregunta al Form, activamos el desglose por microciclo."
-)
-
-df_chart = df_sesiones.copy()
-if mes_sel != "TODOS":
-    df_chart = df_chart[df_chart["mes"] == mes_sel]
-if jugador_sel_id:
-    df_chart = df_chart[df_chart["idJugador"] == jugador_sel_id]
-    subtitulo = f"Individual — {fila_jugador['nombre']}"
-else:
-    subtitulo = f"Colectivo — {CATEGORIA}"
-st.caption(f"Análisis de carga para: {subtitulo}")
-
-if df_chart.empty:
-    st.caption("Sin datos de carga para este filtro.")
-else:
-    resumen = df_chart.groupby(["semana", "tipo"])["srpe"].sum().unstack(fill_value=0)
-    semanas_orden = ordenar_semanas_desc(resumen.index.tolist())[::-1]
-    resumen = resumen.reindex(semanas_orden)
-
-    fig_semana = go.Figure()
-    if "ENTRENO" in resumen.columns:
-        fig_semana.add_trace(go.Bar(name="Entrenamiento", x=resumen.index, y=resumen["ENTRENO"], marker_color="#10b981"))
-    if "PARTIDO" in resumen.columns:
-        fig_semana.add_trace(go.Bar(name="Partido", x=resumen.index, y=resumen["PARTIDO"], marker_color="#ef4444"))
-    fig_semana.update_layout(
-        template="plotly_dark", height=280, barmode="group",
-        margin=dict(l=10, r=10, t=10, b=10),
-        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-        legend=dict(orientation="h", yanchor="bottom", y=1.02),
+with st.container(border=True):
+    st.caption(
+        "Tu formulario no indica si una sesión es MD-3, MD, GYM, etc., así que agrupo por semana en su lugar. "
+        "Si más adelante añades esa pregunta al Form, activamos el desglose por microciclo."
     )
-    st.plotly_chart(fig_semana, use_container_width=True)
+
+    df_chart = df_sesiones.copy()
+    if mes_sel != "TODOS":
+        df_chart = df_chart[df_chart["mes"] == mes_sel]
+    if jugador_sel_id:
+        df_chart = df_chart[df_chart["idJugador"] == jugador_sel_id]
+        subtitulo = f"Individual — {fila_jugador['nombre']}"
+    else:
+        subtitulo = f"Colectivo — {CATEGORIA}"
+    st.caption(f"Análisis de carga para: {subtitulo}")
+
+    if df_chart.empty:
+        st.caption("Sin datos de carga para este filtro.")
+    else:
+        resumen = df_chart.groupby(["semana", "tipo"])["srpe"].sum().unstack(fill_value=0)
+        semanas_orden = ordenar_semanas_desc(resumen.index.tolist())[::-1]
+        resumen = resumen.reindex(semanas_orden)
+
+        fig_semana = go.Figure()
+        if "ENTRENO" in resumen.columns:
+            fig_semana.add_trace(go.Bar(name="Entrenamiento", x=resumen.index, y=resumen["ENTRENO"], marker_color="#10b981"))
+        if "PARTIDO" in resumen.columns:
+            fig_semana.add_trace(go.Bar(name="Partido", x=resumen.index, y=resumen["PARTIDO"], marker_color="#ef4444"))
+        fig_semana.update_layout(
+            template="plotly_dark", height=280, barmode="group",
+            margin=dict(l=10, r=10, t=10, b=10),
+            paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+            legend=dict(orientation="h", yanchor="bottom", y=1.02),
+        )
+        st.plotly_chart(fig_semana, use_container_width=True)
